@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express'
-import { dataHandler } from '../apps/api/src/handlers.js'
 
 export default async function handler(request: Request, response: Response) {
+  const { dataHandler } = await import('../apps/api/src/handlers.js')
   return dataHandler(request, response)
 }
