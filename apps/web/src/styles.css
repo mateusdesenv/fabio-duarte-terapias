@@ -755,6 +755,9 @@ blockquote svg {
 }
 .calendar-wrap {
   overflow: auto;
+  max-height: calc(100vh - 300px);
+  min-height: 520px;
+  overscroll-behavior: contain;
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 15px;
@@ -767,8 +770,16 @@ blockquote svg {
 .calendar-corner,
 .day-head {
   height: 60px;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #fff;
   border-bottom: 1px solid var(--line);
   border-right: 1px solid var(--line);
+}
+.calendar-corner {
+  left: 0;
+  z-index: 5;
 }
 .day-head {
   display: flex;
@@ -790,6 +801,10 @@ blockquote svg {
 }
 .time-label {
   height: 76px;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #fff;
   padding: 12px 8px;
   text-align: center;
   color: var(--muted);
@@ -802,6 +817,10 @@ blockquote svg {
   padding: 4px;
   border-right: 1px solid #eee6d9;
   border-bottom: 1px solid #eee6d9;
+}
+.calendar-cell.night-hours,
+.time-label.night-hours {
+  background: #fcf8f1;
 }
 .calendar-event {
   width: 100%;
