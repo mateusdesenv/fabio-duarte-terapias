@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   CalendarDays, Check, ChevronLeft, ChevronRight, CircleUserRound, Clock3,
   Home, LogOut, Menu, MessageCircle, Plus, RefreshCcw, Search, Settings, BriefcaseBusiness,
-  Sparkles, Trash2, UserRound, UsersRound, X, Pencil, Eye, EyeOff,
+  Sparkles, Trash2, UserRound, UsersRound, X, Pencil, Eye, EyeOff, BarChart3, Wallet, TrendingUp, Receipt,
 } from 'lucide-react'
 import { seedData, statusMap, STORAGE_KEY } from './data'
 
@@ -69,7 +69,7 @@ function Login({ onEnter }) {
 }
 
 const navItems = [
-  ['home', 'Início', Home], ['agenda', 'Agenda', CalendarDays], ['patients', 'Pacientes', UsersRound], ['services', 'Serviços', BriefcaseBusiness], ['appointments', 'Atendimentos', Sparkles], ['settings', 'Configurações', Settings],
+  ['home', 'Início', Home], ['agenda', 'Agenda', CalendarDays], ['patients', 'Pacientes', UsersRound], ['services', 'Serviços', BriefcaseBusiness], ['appointments', 'Atendimentos', Sparkles], ['reports', 'Relatórios', BarChart3], ['settings', 'Configurações', Settings],
 ]
 
 function Sidebar({ page, setPage, mobileOpen, setMobileOpen, onLogout }) {
@@ -198,6 +198,27 @@ function Appointments({ data, setData, onEdit, openNew }) {
   </>
 }
 
+function Reports({ data }) {
+  const dates = data.appointments.map(item=>item.date).sort()
+  const [filters,setFilters]=useState({from:dates[0]||todayISO,to:dates.at(-1)||todayISO,patientId:'all',status:'all'})
+  const filtered=data.appointments.filter(item=>(!filters.from||item.date>=filters.from)&&(!filters.to||item.date<=filters.to)&&(filters.patientId==='all'||item.patientId===filters.patientId)&&(filters.status==='all'||item.status===filters.status))
+  const valid=filtered.filter(item=>item.status!=='canceled')
+  const realized=filtered.filter(item=>item.status==='done').reduce((sum,item)=>sum+Number(item.price||0),0)
+  const expected=filtered.filter(item=>['confirmed','pending'].includes(item.status)).reduce((sum,item)=>sum+Number(item.price||0),0)
+  const total=valid.reduce((sum,item)=>sum+Number(item.price||0),0)
+  const average=valid.length?total/valid.length:0
+  const byService=data.services.map(service=>({name:service.name,total:valid.filter(item=>item.serviceId===service.id||item.service===service.name).reduce((sum,item)=>sum+Number(item.price||0),0)})).filter(item=>item.total>0).sort((a,b)=>b.total-a.total)
+  const maxService=Math.max(...byService.map(item=>item.total),1)
+  const byPatient=data.patients.map(patient=>({patient,total:valid.filter(item=>item.patientId===patient.id).reduce((sum,item)=>sum+Number(item.price||0),0),count:valid.filter(item=>item.patientId===patient.id).length})).filter(item=>item.count).sort((a,b)=>b.total-a.total).slice(0,5)
+  const clear=()=>setFilters({from:dates[0]||todayISO,to:dates.at(-1)||todayISO,patientId:'all',status:'all'})
+  return <><PageHeader eyebrow="VISÃO FINANCEIRA" title="Relatórios" subtitle="Acompanhe ganhos, atendimentos e desempenho por período." />
+    <section className="report-filters"><label>Data inicial<input type="date" value={filters.from} onChange={e=>setFilters({...filters,from:e.target.value})}/></label><label>Data final<input type="date" value={filters.to} onChange={e=>setFilters({...filters,to:e.target.value})}/></label><label>Cliente<select value={filters.patientId} onChange={e=>setFilters({...filters,patientId:e.target.value})}><option value="all">Todos os clientes</option>{data.patients.map(patient=><option value={patient.id} key={patient.id}>{patient.name}</option>)}</select></label><label>Status<select value={filters.status} onChange={e=>setFilters({...filters,status:e.target.value})}><option value="all">Todos, exceto cancelados nos totais</option>{Object.entries(statusMap).map(([id,item])=><option value={id} key={id}>{item.label}</option>)}</select></label><button className="secondary-button" onClick={clear}><RefreshCcw/>Limpar filtros</button></section>
+    <div className="report-kpis"><article><div className="report-icon received"><Wallet/></div><span>Ganhos realizados</span><strong>{formatCurrency(realized)}</strong><small>Atendimentos concluídos</small></article><article><div className="report-icon expected"><TrendingUp/></div><span>A receber</span><strong>{formatCurrency(expected)}</strong><small>Confirmados e pendentes</small></article><article><div className="report-icon total"><Receipt/></div><span>Faturamento do período</span><strong>{formatCurrency(total)}</strong><small>{valid.length} atendimentos válidos</small></article><article><div className="report-icon average"><BarChart3/></div><span>Ticket médio</span><strong>{formatCurrency(average)}</strong><small>Média por atendimento</small></article></div>
+    <div className="report-layout"><article className="panel"><div className="panel-title"><div><BarChart3/><h2>Receita por serviço</h2></div><span className="soft-badge">{formatCurrency(total)}</span></div>{byService.length?<div className="revenue-bars">{byService.map(item=><div className="revenue-row" key={item.name}><div><span>{item.name}</span><strong>{formatCurrency(item.total)}</strong></div><div className="revenue-track"><span style={{width:`${Math.max(item.total/maxService*100,4)}%`}}/></div></div>)}</div>:<div className="empty-report">Nenhum atendimento encontrado neste período.</div>}</article><article className="panel"><div className="panel-title"><div><UsersRound/><h2>Principais clientes</h2></div></div><div className="client-ranking">{byPatient.map((item,index)=><div key={item.patient.id}><span className="rank">{index+1}</span><div><strong>{item.patient.name}</strong><small>{item.count} {item.count===1?'atendimento':'atendimentos'}</small></div><b>{formatCurrency(item.total)}</b></div>)}{!byPatient.length&&<div className="empty-report">Nenhum cliente encontrado.</div>}</div></article></div>
+    <article className="panel report-details"><div className="panel-title"><div><Receipt/><h2>Detalhamento financeiro</h2></div><span className="soft-badge">{filtered.length} registros</span></div><div className="table-wrap"><table><thead><tr><th>Data</th><th>Cliente</th><th>Serviço</th><th>Período</th><th>Status</th><th>Valor</th></tr></thead><tbody>{[...filtered].sort((a,b)=>`${b.date}${b.time}`.localeCompare(`${a.date}${a.time}`)).map(item=>{const patient=getPatient(data,item.patientId);return <tr key={item.id}><td>{formatDate(item.date)}</td><td><strong>{patient?.name}</strong></td><td>{item.service}</td><td>{item.time}–{endTime(item.time,item.duration)}</td><td><Status value={item.status}/></td><td><strong>{formatCurrency(item.price)}</strong></td></tr>})}</tbody></table></div></article>
+  </>
+}
+
 function SettingsPage({ resetData }) { return <><PageHeader eyebrow="PREFERÊNCIAS" title="Configurações" subtitle="Ajustes disponíveis nesta versão demonstrativa." /><div className="settings-grid"><article className="panel"><h2>Dados da demonstração</h2><p className="muted">Restaure pacientes e consultas originais. As alterações atuais serão substituídas.</p><button className="secondary-button" onClick={resetData}><RefreshCcw /> Restaurar dados iniciais</button></article><article className="panel"><h2>Sobre esta versão</h2><p className="muted">Protótipo local com login visual e persistência no navegador. Não há servidor ou autenticação real.</p><span className="version">Versão 0.1 · Apresentação</span></article></div></> }
 
 export default function App() {
@@ -208,6 +229,6 @@ export default function App() {
   const saveAppointment=(item)=>{setData(d=>({...d,appointments:d.appointments.some(a=>a.id===item.id)?d.appointments.map(a=>a.id===item.id?item:a):[...d.appointments,item]}));setModal(null)}
   const resetData=()=>{if(confirm('Restaurar todos os dados da demonstração?'))setData(cloneSeed())}
   if(!logged)return <Login onEnter={enter}/>
-  const content={home:<Dashboard data={data} openNew={()=>setModal('new')} goAgenda={()=>setPage('agenda')}/>,agenda:<Agenda data={data} setData={setData} openNew={()=>setModal('new')} onEdit={a=>setModal(a)}/>,patients:<Patients data={data} setData={setData}/>,services:<Services data={data} setData={setData}/>,appointments:<Appointments data={data} setData={setData} openNew={()=>setModal('new')} onEdit={a=>setModal(a)}/>,settings:<SettingsPage resetData={resetData}/>}[page]
+  const content={home:<Dashboard data={data} openNew={()=>setModal('new')} goAgenda={()=>setPage('agenda')}/>,agenda:<Agenda data={data} setData={setData} openNew={()=>setModal('new')} onEdit={a=>setModal(a)}/>,patients:<Patients data={data} setData={setData}/>,services:<Services data={data} setData={setData}/>,appointments:<Appointments data={data} setData={setData} openNew={()=>setModal('new')} onEdit={a=>setModal(a)}/>,reports:<Reports data={data}/>,settings:<SettingsPage resetData={resetData}/>}[page]
   return <Shell page={page} setPage={setPage} onLogout={logout}>{content}{modal&&<AppointmentModal data={data} appointment={modal==='new'?null:modal} onClose={()=>setModal(null)} onSave={saveAppointment}/>}</Shell>
 }
