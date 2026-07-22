@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   CalendarDays, Check, ChevronLeft, ChevronRight, CircleUserRound, Clock3,
   Home, LogOut, Menu, MessageCircle, Plus, RefreshCcw, Search, Settings, BriefcaseBusiness,
@@ -9,21 +9,38 @@ import { seedData, statusMap, STORAGE_KEY } from './data'
 const cloneSeed = () => JSON.parse(JSON.stringify(seedData))
 const todayISO = '2026-07-22'
 
+function migrateData(stored) {
+  if (!stored) return cloneSeed()
+  const services = stored.services?.length ? stored.services : cloneSeed().services
+  const appointments = (stored.appointments || []).map((appointment) => {
+    const service = services.find((item) => item.id === appointment.serviceId || item.name === appointment.service)
+    return { ...appointment, serviceId: service?.id || '', service: appointment.service || service?.name || 'Serviço', price: Number(appointment.price ?? service?.price ?? 0), duration: Number(appointment.duration ?? service?.duration ?? 60) }
+  })
+  return { ...cloneSeed(), ...stored, services, appointments }
+}
+
 function usePersistentData() {
   const [data, setData] = useState(() => {
     try {
       const stored = JSON.parse(localStorage.getItem(STORAGE_KEY))
-      if (!stored) return cloneSeed()
-      const services = stored.services?.length ? stored.services : cloneSeed().services
-      const appointments = (stored.appointments || []).map((appointment) => {
-        const service = services.find((item) => item.id === appointment.serviceId || item.name === appointment.service)
-        return { ...appointment, serviceId: service?.id || '', service: appointment.service || service?.name || 'Serviço', price: Number(appointment.price ?? service?.price ?? 0), duration: Number(appointment.duration ?? service?.duration ?? 60) }
-      })
-      return { ...cloneSeed(), ...stored, services, appointments }
+      return migrateData(stored)
     }
     catch { return cloneSeed() }
   })
-  useEffect(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(data)), [data])
+  const [ready,setReady]=useState(false)
+  const saveTimer=useRef(null)
+  useEffect(()=>{
+    let active=true
+    fetch('/api/data').then(response=>{if(!response.ok)throw new Error('API indisponível');return response.json()}).then(payload=>{if(active&&payload.data)setData(migrateData(payload.data))}).catch(error=>console.warn('Usando dados locais:',error.message)).finally(()=>{if(active)setReady(true)})
+    return()=>{active=false}
+  },[])
+  useEffect(()=>{
+    localStorage.setItem(STORAGE_KEY,JSON.stringify(data))
+    if(!ready)return
+    clearTimeout(saveTimer.current)
+    saveTimer.current=setTimeout(()=>fetch('/api/data',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(response=>{if(!response.ok)throw new Error('Falha ao sincronizar')}).catch(error=>console.error(error.message)),350)
+    return()=>clearTimeout(saveTimer.current)
+  },[data,ready])
   return [data, setData]
 }
 
