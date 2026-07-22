@@ -1,17 +1,26 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   CalendarDays, Check, ChevronLeft, ChevronRight, CircleUserRound, Clock3,
-  Home, LogOut, Menu, MessageCircle, Plus, RefreshCcw, Search, Settings,
+  Home, LogOut, Menu, MessageCircle, Plus, RefreshCcw, Search, Settings, BriefcaseBusiness,
   Sparkles, Trash2, UserRound, UsersRound, X, Pencil, Eye, EyeOff,
 } from 'lucide-react'
-import { seedData, serviceOptions, statusMap, STORAGE_KEY } from './data'
+import { seedData, statusMap, STORAGE_KEY } from './data'
 
 const cloneSeed = () => JSON.parse(JSON.stringify(seedData))
 const todayISO = '2026-07-22'
 
 function usePersistentData() {
   const [data, setData] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || cloneSeed() }
+    try {
+      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY))
+      if (!stored) return cloneSeed()
+      const services = stored.services?.length ? stored.services : cloneSeed().services
+      const appointments = (stored.appointments || []).map((appointment) => {
+        const service = services.find((item) => item.id === appointment.serviceId || item.name === appointment.service)
+        return { ...appointment, serviceId: service?.id || '', service: appointment.service || service?.name || 'Serviço', price: Number(appointment.price ?? service?.price ?? 0), duration: Number(appointment.duration ?? service?.duration ?? 60) }
+      })
+      return { ...cloneSeed(), ...stored, services, appointments }
+    }
     catch { return cloneSeed() }
   })
   useEffect(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(data)), [data])
@@ -19,6 +28,8 @@ function usePersistentData() {
 }
 
 const formatDate = (date) => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' }).format(new Date(`${date}T12:00:00`))
+const formatCurrency = (value) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value || 0))
+const endTime = (time, duration) => { const [hours, minutes] = time.split(':').map(Number); const total = hours * 60 + minutes + Number(duration || 0); return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}` }
 const getPatient = (data, id) => data.patients.find((p) => p.id === id)
 
 function Brand({ compact = false }) {
@@ -58,7 +69,7 @@ function Login({ onEnter }) {
 }
 
 const navItems = [
-  ['home', 'Início', Home], ['agenda', 'Agenda', CalendarDays], ['patients', 'Pacientes', UsersRound], ['appointments', 'Atendimentos', Sparkles], ['settings', 'Configurações', Settings],
+  ['home', 'Início', Home], ['agenda', 'Agenda', CalendarDays], ['patients', 'Pacientes', UsersRound], ['services', 'Serviços', BriefcaseBusiness], ['appointments', 'Atendimentos', Sparkles], ['settings', 'Configurações', Settings],
 ]
 
 function Sidebar({ page, setPage, mobileOpen, setMobileOpen, onLogout }) {
@@ -113,12 +124,14 @@ function Dashboard({ data, openNew, goAgenda }) {
 }
 
 function AppointmentModal({ data, appointment, onClose, onSave }) {
-  const initial = appointment || { patientId: data.patients[0]?.id || '', date: todayISO, time: '09:00', duration: 60, service: serviceOptions[0], status: 'pending', notes: '' }
+  const firstService = data.services.find(service => service.active) || data.services[0]
+  const initial = appointment || { patientId: data.patients[0]?.id || '', serviceId: firstService?.id || '', date: todayISO, time: '09:00', duration: firstService?.duration || 60, service: firstService?.name || '', price: firstService?.price || 0, status: 'pending', notes: '' }
   const [form, setForm] = useState(initial)
   const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) })
-  return <div className="modal-layer" role="dialog" aria-modal="true"><form className="modal" onSubmit={(e) => { e.preventDefault(); onSave({ ...form, id: form.id || crypto.randomUUID(), duration: Number(form.duration) }) }}>
+  const chooseService = (serviceId) => { const service = data.services.find(item => item.id === serviceId); if (service) setForm({ ...form, serviceId, service: service.name, price: service.price, duration: service.duration }) }
+  return <div className="modal-layer" role="dialog" aria-modal="true"><form className="modal" onSubmit={(e) => { e.preventDefault(); onSave({ ...form, id: form.id || crypto.randomUUID(), duration: Number(form.duration), price: Number(form.price) }) }}>
     <div className="modal-header"><div><p className="eyebrow">AGENDA</p><h2>{appointment ? 'Editar consulta' : 'Novo agendamento'}</h2></div><button type="button" onClick={onClose}><X /></button></div>
-    <div className="form-grid"><label className="span-2">Paciente<select {...field('patientId')}>{data.patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>Data<input type="date" {...field('date')} /></label><label>Horário<input type="time" {...field('time')} /></label><label>Serviço<select {...field('service')}>{serviceOptions.map(s => <option key={s}>{s}</option>)}</select></label><label>Status<select {...field('status')}>{Object.entries(statusMap).map(([id,s]) => <option key={id} value={id}>{s.label}</option>)}</select></label><label className="span-2">Observações<textarea rows="3" {...field('notes')} /></label></div>
+    <div className="form-grid"><label className="span-2">Paciente<select {...field('patientId')}>{data.patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label className="span-2">Serviço<select value={form.serviceId} onChange={e=>chooseService(e.target.value)}>{data.services.filter(s=>s.active || s.id===form.serviceId).map(s => <option value={s.id} key={s.id}>{s.name} · {s.duration} min · {formatCurrency(s.price)}</option>)}</select></label><label>Data<input type="date" {...field('date')} /></label><label>Horário inicial<input type="time" {...field('time')} /></label><label>Duração deste atendimento<input type="number" min="15" step="15" {...field('duration')} /><small className="field-hint">Término previsto: {endTime(form.time, form.duration)}</small></label><label>Valor deste atendimento<input type="number" min="0" step="0.01" {...field('price')} /><small className="field-hint">Pode ser alterado para aplicar desconto.</small></label><label className="span-2">Status<select {...field('status')}>{Object.entries(statusMap).map(([id,s]) => <option key={id} value={id}>{s.label}</option>)}</select></label><label className="span-2">Observações<textarea rows="3" {...field('notes')} /></label></div>
     <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button className="primary-button" type="submit">Salvar agendamento</button></div>
   </form></div>
 }
@@ -134,7 +147,7 @@ function Agenda({ data, onEdit, openNew, setData }) {
     <div className="agenda-toolbar"><div><button><ChevronLeft /></button><button className="today-button">Hoje</button><button><ChevronRight /></button></div><strong>20 a 25 de julho de 2026</strong><div className="view-switch"><button className="active">Semana</button><button>Mês</button></div></div>
     <div className="agenda-layout"><div className="calendar-wrap"><div className="calendar-grid"><div className="calendar-corner" />{days.map((d,i)=><div key={d} className={`day-head ${d===todayISO?'today':''}`}><span>{['Seg','Ter','Qua','Qui','Sex','Sáb'][i]}</span><strong>{d.slice(-2)}</strong></div>)}
       {['08:00','09:00','10:00','11:00','14:00','15:00','16:00','17:00'].map(time => <div className="calendar-row" key={time}><div className="time-label">{time}</div>{days.map(day => <div className="calendar-cell" key={day}>{data.appointments.filter(a=>a.date===day && a.time.slice(0,2)===time.slice(0,2)).map(a=>{const p=getPatient(data,a.patientId);return <button key={a.id} className={`calendar-event ${a.status} ${selectedId===a.id?'selected':''}`} onClick={()=>setSelectedId(a.id)}><strong>{p?.name}</strong><span>{a.service}</span></button>})}</div>)}</div>)}</div></div>
-      <aside className="detail-panel">{selected ? <><p className="eyebrow">DETALHES DA CONSULTA</p><div className="detail-person"><div className="avatar large">{patient?.name.split(' ').map(n=>n[0]).slice(0,2).join('')}</div><div><h2>{patient?.name}</h2><span>{patient?.phone}</span></div></div><div className="detail-info"><p><CalendarDays /> {formatDate(selected.date)}, {selected.time}</p><p><Sparkles /> {selected.service}</p><Status value={selected.status} />{selected.notes && <div className="note">{selected.notes}</div>}</div><WhatsAppButton patient={patient} appointment={selected} /><button className="secondary-button wide" onClick={()=>onEdit(selected)}><Pencil /> Editar</button><button className="danger-button wide" onClick={deleteSelected}><Trash2 /> Excluir consulta</button></> : <div className="empty-state"><CalendarDays /><h3>Selecione uma consulta</h3><p>Os detalhes aparecerão aqui.</p></div>}</aside>
+      <aside className="detail-panel">{selected ? <><p className="eyebrow">DETALHES DA CONSULTA</p><div className="detail-person"><div className="avatar large">{patient?.name.split(' ').map(n=>n[0]).slice(0,2).join('')}</div><div><h2>{patient?.name}</h2><span>{patient?.phone}</span></div></div><div className="detail-info"><p><CalendarDays /> {formatDate(selected.date)}, {selected.time}–{endTime(selected.time, selected.duration)}</p><p><Clock3 /> {selected.duration} minutos</p><p><Sparkles /> {selected.service}</p><p><strong>{formatCurrency(selected.price)}</strong></p><Status value={selected.status} />{selected.notes && <div className="note">{selected.notes}</div>}</div><WhatsAppButton patient={patient} appointment={selected} /><button className="secondary-button wide" onClick={()=>onEdit(selected)}><Pencil /> Editar</button><button className="danger-button wide" onClick={deleteSelected}><Trash2 /> Excluir consulta</button></> : <div className="empty-state"><CalendarDays /><h3>Selecione uma consulta</h3><p>Os detalhes aparecerão aqui.</p></div>}</aside>
     </div>
   </>
 }
@@ -151,13 +164,37 @@ function Patients({ data, setData }) {
   </>
 }
 
+function Services({ data, setData }) {
+  const empty = { name: '', price: '', duration: 60, active: true }
+  const [editing, setEditing] = useState(null)
+  const [form, setForm] = useState(empty)
+  const openForm = (service = null) => { setEditing(service?.id || 'new'); setForm(service ? { ...service } : empty) }
+  const closeForm = () => { setEditing(null); setForm(empty) }
+  const save = (event) => {
+    event.preventDefault()
+    const service = { ...form, id: editing === 'new' ? crypto.randomUUID() : editing, price: Number(form.price), duration: Number(form.duration), active: form.active !== false }
+    setData(current => ({ ...current, services: editing === 'new' ? [...current.services, service] : current.services.map(item => item.id === editing ? service : item) }))
+    closeForm()
+  }
+  const toggle = (id) => setData(current => ({ ...current, services: current.services.map(service => service.id === id ? { ...service, active: !service.active } : service) }))
+  const remove = (id) => {
+    const inUse = data.appointments.some(appointment => appointment.serviceId === id)
+    if (inUse) return alert('Este serviço possui atendimentos vinculados. Você pode desativá-lo, mas não excluí-lo.')
+    if (confirm('Deseja excluir este serviço?')) setData(current => ({ ...current, services: current.services.filter(service => service.id !== id) }))
+  }
+  return <><PageHeader eyebrow="CATÁLOGO" title="Serviços" subtitle="Defina valores e duração padrão para agilizar seus agendamentos." action={<button className="primary-button" onClick={()=>openForm()}><Plus /> Novo serviço</button>} />
+    <div className="service-grid">{data.services.map(service=><article className={`service-card ${service.active?'':'inactive'}`} key={service.id}><div className="service-card-top"><div className="service-icon"><Sparkles /></div><span className={`service-state ${service.active?'active':'inactive'}`}>{service.active?'Ativo':'Inativo'}</span></div><h3>{service.name}</h3><div className="service-facts"><div><small>Valor padrão</small><strong>{formatCurrency(service.price)}</strong></div><div><small>Duração padrão</small><strong>{service.duration} min</strong></div></div><div className="service-actions"><button className="secondary-button" onClick={()=>openForm(service)}><Pencil /> Editar</button><button className="text-button" onClick={()=>toggle(service.id)}>{service.active?'Desativar':'Ativar'}</button><button className="icon-danger" onClick={()=>remove(service.id)} aria-label={`Excluir ${service.name}`}><Trash2 /></button></div></article>)}</div>
+    {editing&&<div className="modal-layer" role="dialog" aria-modal="true"><form className="modal small" onSubmit={save}><div className="modal-header"><div><p className="eyebrow">SERVIÇO</p><h2>{editing==='new'?'Novo serviço':'Editar serviço'}</h2></div><button type="button" onClick={closeForm}><X /></button></div><div className="form-grid"><label className="span-2">Nome do serviço<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label><label>Valor padrão (R$)<input type="number" min="0" step="0.01" required value={form.price} onChange={e=>setForm({...form,price:e.target.value})}/></label><label>Duração padrão<input type="number" min="15" step="15" required value={form.duration} onChange={e=>setForm({...form,duration:e.target.value})}/><small className="field-hint">Em minutos.</small></label><label className="check span-2"><input type="checkbox" checked={form.active} onChange={e=>setForm({...form,active:e.target.checked})}/> Disponível para novos agendamentos</label></div><div className="modal-actions"><button type="button" className="secondary-button" onClick={closeForm}>Cancelar</button><button className="primary-button">Salvar serviço</button></div></form></div>}
+  </>
+}
+
 function Appointments({ data, setData, onEdit, openNew }) {
   const [filter,setFilter]=useState('all')
   const list=[...data.appointments].sort((a,b)=>`${b.date}${b.time}`.localeCompare(`${a.date}${a.time}`)).filter(a=>filter==='all'||a.status===filter)
   const updateStatus=(id,status)=>setData(d=>({...d,appointments:d.appointments.map(a=>a.id===id?{...a,status}:a)}))
   return <><PageHeader eyebrow="ACOMPANHAMENTO" title="Atendimentos" subtitle="Consulte e atualize o histórico das consultas." action={<button className="primary-button" onClick={openNew}><Plus /> Nova consulta</button>} />
     <div className="filter-tabs">{[['all','Todos'],...Object.entries(statusMap).map(([k,v])=>[k,v.label])].map(([k,l])=><button className={filter===k?'active':''} onClick={()=>setFilter(k)} key={k}>{l}</button>)}</div>
-    <div className="table-wrap"><table><thead><tr><th>Paciente</th><th>Data</th><th>Serviço</th><th>Status</th><th>Ações</th></tr></thead><tbody>{list.map(a=>{const p=getPatient(data,a.patientId);return <tr key={a.id}><td><strong>{p?.name}</strong><small>{p?.phone}</small></td><td>{formatDate(a.date)}<small>{a.time}</small></td><td>{a.service}</td><td><select className={`status-select ${a.status}`} value={a.status} onChange={e=>updateStatus(a.id,e.target.value)}>{Object.entries(statusMap).map(([k,v])=><option value={k} key={k}>{v.label}</option>)}</select></td><td><div className="table-actions"><WhatsAppButton patient={p} appointment={a} compact/><button onClick={()=>onEdit(a)}><Pencil /></button></div></td></tr>})}</tbody></table></div>
+    <div className="table-wrap"><table><thead><tr><th>Paciente</th><th>Data e período</th><th>Serviço</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead><tbody>{list.map(a=>{const p=getPatient(data,a.patientId);return <tr key={a.id}><td><strong>{p?.name}</strong><small>{p?.phone}</small></td><td>{formatDate(a.date)}<small>{a.time}–{endTime(a.time,a.duration)} · {a.duration} min</small></td><td>{a.service}</td><td><strong>{formatCurrency(a.price)}</strong></td><td><select className={`status-select ${a.status}`} value={a.status} onChange={e=>updateStatus(a.id,e.target.value)}>{Object.entries(statusMap).map(([k,v])=><option value={k} key={k}>{v.label}</option>)}</select></td><td><div className="table-actions"><WhatsAppButton patient={p} appointment={a} compact/><button onClick={()=>onEdit(a)}><Pencil /></button></div></td></tr>})}</tbody></table></div>
   </>
 }
 
@@ -171,6 +208,6 @@ export default function App() {
   const saveAppointment=(item)=>{setData(d=>({...d,appointments:d.appointments.some(a=>a.id===item.id)?d.appointments.map(a=>a.id===item.id?item:a):[...d.appointments,item]}));setModal(null)}
   const resetData=()=>{if(confirm('Restaurar todos os dados da demonstração?'))setData(cloneSeed())}
   if(!logged)return <Login onEnter={enter}/>
-  const content={home:<Dashboard data={data} openNew={()=>setModal('new')} goAgenda={()=>setPage('agenda')}/>,agenda:<Agenda data={data} setData={setData} openNew={()=>setModal('new')} onEdit={a=>setModal(a)}/>,patients:<Patients data={data} setData={setData}/>,appointments:<Appointments data={data} setData={setData} openNew={()=>setModal('new')} onEdit={a=>setModal(a)}/>,settings:<SettingsPage resetData={resetData}/>}[page]
+  const content={home:<Dashboard data={data} openNew={()=>setModal('new')} goAgenda={()=>setPage('agenda')}/>,agenda:<Agenda data={data} setData={setData} openNew={()=>setModal('new')} onEdit={a=>setModal(a)}/>,patients:<Patients data={data} setData={setData}/>,services:<Services data={data} setData={setData}/>,appointments:<Appointments data={data} setData={setData} openNew={()=>setModal('new')} onEdit={a=>setModal(a)}/>,settings:<SettingsPage resetData={resetData}/>}[page]
   return <Shell page={page} setPage={setPage} onLogout={logout}>{content}{modal&&<AppointmentModal data={data} appointment={modal==='new'?null:modal} onClose={()=>setModal(null)} onSave={saveAppointment}/>}</Shell>
 }
