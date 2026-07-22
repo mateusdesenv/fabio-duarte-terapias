@@ -29,16 +29,18 @@ function usePersistentData() {
   })
   const [ready,setReady]=useState(false)
   const saveTimer=useRef(null)
+  const lastSynced=useRef('')
   useEffect(()=>{
     let active=true
-    fetch('/api/data').then(response=>{if(!response.ok)throw new Error('API indisponível');return response.json()}).then(payload=>{if(active&&payload.data)setData(migrateData(payload.data))}).catch(error=>console.warn('Usando dados locais:',error.message)).finally(()=>{if(active)setReady(true)})
+    fetch('/api/data').then(response=>{if(!response.ok)throw new Error('API indisponível');return response.json()}).then(payload=>{if(active&&payload.data){const normalized=migrateData(payload.data);lastSynced.current=JSON.stringify(normalized);setData(normalized)}}).catch(error=>console.warn('Usando dados locais:',error.message)).finally(()=>{if(active)setReady(true)})
     return()=>{active=false}
   },[])
   useEffect(()=>{
-    localStorage.setItem(STORAGE_KEY,JSON.stringify(data))
-    if(!ready)return
+    const serialized=JSON.stringify(data)
+    localStorage.setItem(STORAGE_KEY,serialized)
+    if(!ready||serialized===lastSynced.current)return
     clearTimeout(saveTimer.current)
-    saveTimer.current=setTimeout(()=>fetch('/api/data',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(response=>{if(!response.ok)throw new Error('Falha ao sincronizar')}).catch(error=>console.error(error.message)),350)
+    saveTimer.current=setTimeout(()=>fetch('/api/data',{method:'PUT',headers:{'Content-Type':'application/json'},body:serialized}).then(response=>{if(!response.ok)throw new Error('Falha ao sincronizar');return response.json()}).then(payload=>{if(payload.data){const normalized=migrateData(payload.data);const normalizedJson=JSON.stringify(normalized);lastSynced.current=normalizedJson;if(normalizedJson!==serialized)setData(normalized)}}).catch(error=>console.error(error.message)),350)
     return()=>clearTimeout(saveTimer.current)
   },[data,ready])
   return [data, setData]

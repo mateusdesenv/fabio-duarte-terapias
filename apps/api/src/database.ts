@@ -1,6 +1,6 @@
-import { MongoClient, type Collection, type Db } from 'mongodb'
+import { MongoClient, ObjectId, type Collection, type Db } from 'mongodb'
 
-export type StoredEntity = { id: string; [key: string]: unknown }
+export type StoredEntity = { _id: ObjectId; [key: string]: unknown }
 type LegacyState = { _id: string; data: unknown; createdAt: Date; updatedAt: Date }
 
 const databaseName = process.env.MONGODB_DATABASE || 'fabio_duarte_terapias'
@@ -36,12 +36,9 @@ export async function legacyStateCollection(): Promise<Collection<LegacyState>> 
 
 export async function ensureIndexes() {
   indexesPromise ??= entityCollections().then(({ clients, therapies, appointments }) => Promise.all([
-    clients.createIndex({ id: 1 }, { unique: true }),
     clients.createIndex({ phone: 1 }),
     clients.createIndex({ name: 1 }),
-    therapies.createIndex({ id: 1 }, { unique: true }),
     therapies.createIndex({ active: 1 }),
-    appointments.createIndex({ id: 1 }, { unique: true }),
     appointments.createIndex({ date: 1, time: 1 }),
     appointments.createIndex({ patientId: 1 }),
     appointments.createIndex({ packageId: 1 }, { sparse: true }),
