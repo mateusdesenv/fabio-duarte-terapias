@@ -1619,3 +1619,8 @@ blockquote svg {
   .package-summary div:nth-child(3) { border-bottom: 0; }
   .quantity { grid-auto-flow: row; justify-items: end; }
 }
+
+.patient-actions { display: flex; align-items: center; gap: 10px; }
+.patient-actions button { display: flex; align-items: center; gap: 5px; padding: 0; border: 0; background: transparent; color: #8b5c2e; font-size: .7rem; }
+.patient-actions svg { width: 15px; }
+.field-hint.valid-phone { color: #39753d; font-weight: 600; }
